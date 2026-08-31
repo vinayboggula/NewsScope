@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+/* Hide scrollbar for Chrome, Safari, and Opera */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge, and Firefox */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.modern-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.modern-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modern-scrollbar::-webkit-scrollbar-thumb {
+  background: #2d3748;
+  border-radius: 999px;
+}
+
+.modern-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #4a5568;
+}
