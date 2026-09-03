@@ -2,7 +2,10 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 import os
 import re
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
+import requests
 import feedparser
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -13,7 +16,12 @@ from youtube_transcript_api._errors import (
 from youtube_transcript_api.proxies import WebshareProxyConfig
 
 
-# Strong AI-related terms
+logger = logging.getLogger(__name__)
+
+# Keep external scraping from blocking the entire daily pipeline.
+RSS_TIMEOUT_SECONDS = int(os.getenv("SCRAPER_RSS_TIMEOUT", "15"))
+TRANSCRIPT_TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TRANSCRIPT_TIMEOUT", "30"))
+
 STRONG_AI_KEYWORDS = [
     "artificial intelligence",
     "machine learning",
@@ -42,8 +50,6 @@ STRONG_AI_KEYWORDS = [
     "transformer",
 ]
 
-
-# General AI terms
 AI_KEYWORDS = [
     "ai",
     "artificial intelligence",
@@ -188,16 +194,27 @@ class YouTubeScraper:
     # Transcript
     # ---------------------------------------------------------
 
+    def _fetch_transcript(self, video_id: str):
+        """Run the YouTube transcript request in a worker so a stuck request
+        cannot block the daily pipeline indefinitely."""
+        return self.transcript_api.fetch(video_id)
+
     def get_transcript(
         self,
         video_id: str
     ) -> Optional[Transcript]:
 
-        try:
+        logger.info(
+            "Starting transcript fetch for %s (timeout=%ss)",
+            video_id,
+            TRANSCRIPT_TIMEOUT_SECONDS,
+        )
 
-            transcript = self.transcript_api.fetch(
-                video_id
-            )
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self._fetch_transcript, video_id)
+
+        try:
+            transcript = future.result(timeout=TRANSCRIPT_TIMEOUT_SECONDS)
 
             text = " ".join(
                 snippet.text
@@ -205,26 +222,41 @@ class YouTubeScraper:
             )
 
             if not text.strip():
+                logger.warning("Empty transcript for %s", video_id)
                 return None
+
+            logger.info("Transcript fetched successfully for %s", video_id)
 
             return Transcript(
                 text=text
             )
 
+        except FuturesTimeoutError:
+            logger.warning(
+                "Transcript timed out after %ss for %s; continuing without it",
+                TRANSCRIPT_TIMEOUT_SECONDS,
+                video_id,
+            )
+            return None
+
         except (
             TranscriptsDisabled,
             NoTranscriptFound
         ):
-
+            logger.info("No transcript available for %s", video_id)
             return None
 
         except Exception as e:
-
-            print(
-                f"Transcript error ({video_id}): {e}"
+            logger.warning(
+                "Transcript error (%s): %s",
+                video_id,
+                e,
             )
-
             return None
+
+        finally:
+            # Do not wait for a stuck worker during executor shutdown.
+            executor.shutdown(wait=False, cancel_futures=True)
 
     # ---------------------------------------------------------
     # Get latest videos
@@ -237,11 +269,51 @@ class YouTubeScraper:
         max_videos: int = 10
     ) -> List[ChannelVideo]:
 
-        feed = feedparser.parse(
-            self._get_rss_url(channel_id)
+        rss_url = self._get_rss_url(channel_id)
+
+        logger.info(
+            "Fetching YouTube RSS for channel %s (timeout=%ss)",
+            channel_id,
+            RSS_TIMEOUT_SECONDS,
         )
 
+        try:
+            response = requests.get(
+                rss_url,
+                timeout=RSS_TIMEOUT_SECONDS,
+                headers={
+                    "User-Agent": "PulseAI/1.0 (+https://www.youtube.com/)"
+                },
+            )
+            response.raise_for_status()
+            feed = feedparser.parse(response.content)
+
+        except requests.Timeout:
+            logger.warning(
+                "YouTube RSS timed out after %ss for channel %s",
+                RSS_TIMEOUT_SECONDS,
+                channel_id,
+            )
+            return []
+
+        except requests.RequestException as e:
+            logger.warning(
+                "YouTube RSS request failed for channel %s: %s",
+                channel_id,
+                e,
+            )
+            return []
+
+        except Exception as e:
+            logger.warning(
+                "YouTube RSS parsing failed for channel %s: %s",
+                channel_id,
+                e,
+            )
+            return []
+
         if not feed.entries:
+            logger.info("No YouTube RSS entries for channel %s", channel_id)
             return []
 
         cutoff_time = (
@@ -358,10 +430,24 @@ class YouTubeScraper:
         max_videos: int = 5
     ) -> List[ChannelVideo]:
 
+        logger.info(
+            "Starting YouTube channel scrape: %s (window=%sh, max_videos=%s)",
+            channel_id,
+            hours,
+            max_videos,
+        )
+
         videos = self.get_latest_videos(
             channel_id=channel_id,
             hours=hours,
             max_videos=max_videos
+        )
+
+        logger.info(
+            "YouTube channel %s: found %d AI videos in the last %s hours",
+            channel_id,
+            len(videos),
+            hours,
         )
 
         result = []
@@ -387,6 +473,12 @@ class YouTubeScraper:
                     }
                 )
             )
+
+        logger.info(
+            "Finished YouTube channel scrape: %s (%d videos)",
+            channel_id,
+            len(result),
+        )
 
         return result
 
@@ -414,6 +506,7 @@ if __name__ == "__main__":
         "UCHuiy8bXnmK5nisYHUd1J5g",  # NVIDIA
     ]
 
+    logger.info("Running YouTube scraper test with a 24-hour window")
     all_videos = []
 
     for channel_id in YOUTUBE_CHANNELS:
