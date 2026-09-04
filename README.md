@@ -1,6 +1,6 @@
-# PulseAI 🚀
+# NewsScope 🚀
 
-PulseAI is an AI-powered news aggregation platform that automatically collects, summarizes, ranks, and delivers personalized AI news from multiple sources such as YouTube, OpenAI, and Anthropic.
+NewsScope is an AI-powered news aggregation platform that automatically collects, summarizes, ranks, and delivers personalized AI news from multiple sources such as YouTube, OpenAI, and Anthropic.
 
 It helps developers, researchers, and AI enthusiasts stay updated without spending hours reading articles or watching long videos.
 
@@ -84,8 +84,7 @@ AI-NEWS/
 - Anthropic Blog
 
 ### Deployment
-
-
+- Render (Cron job)
 ---
 
 ## 🚀 How It Works
@@ -113,9 +112,9 @@ YouTube / OpenAI / Anthropic
 Clone the repository:
 
 ```bash
-git clone https://github.com/your-username/pulse-ai.git
+[git clone https://github.com/vinayboggula/NewsScope.git]
 
-cd pulse-ai
+cd NewsScope
 ```
 
 Create a virtual environment:
@@ -152,28 +151,20 @@ Create a `.env` file:
 
 ```env
 GROQ_API_KEY=
-
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-POSTGRES_DB=
-POSTGRES_HOST=
-POSTGRES_PORT=
-
+GROQ_MODEL=
 MY_EMAIL=
-MY_PASSWORD=
+APP_PASSWORD=
 TO_EMAIL=
-```
 
+DATABASE_URL=
+DB_PASSWORD=
+
+RESEND_API_KEY=
+EMAIL_FROM = 
+```
 ---
 
 ## ▶️ Run Project
-
-Start PostgreSQL:
-
-```bash
-docker-compose up -d
-```
-
 Run:
 
 ```bash
@@ -211,4 +202,4 @@ Example:
 
 Vinay Boggula
 
-GitHub: https://github.com/your-username
+GitHub: https://github.com/vinayboggula
