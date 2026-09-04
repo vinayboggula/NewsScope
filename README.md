@@ -71,6 +71,11 @@ AI-NEWS/
 - SQLAlchemy
 - Pydantic
 
+### Frontend
+
+- React
+- TailwindCSS
+
 ### AI
 
 - Groq API
